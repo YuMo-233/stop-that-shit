@@ -165,6 +165,13 @@ function handlePrompt(event, state) {
   return repeatedContext ? none() : context(promptContext);
 }
 
+function handleChildPrompt(event, state) {
+  if (state.storageError) return context(`${state.storageError.code}: ${state.storageError.message}`);
+  // Subagent prompts inherit the root contract. They cannot replace the user's
+  // task authority because Codex reports the parent session id for child hooks.
+  return context(contractContext(state.contract, state.delegation, 'active'));
+}
+
 function handleBeforeAction(event, options) {
   const legacyDelegationProtocol = !supportsLifecycleFacts(event)
     && ['delegate', 'control', 'unknown'].includes(event.action.mutability);
@@ -283,8 +290,9 @@ function handleControlEvent(rawEvent, options = {}) {
   switch (event.kind) {
     case 'prompt.submit': {
       const command = runtimeCommand(event.prompt);
-      return command
-        ? handleRuntimeCommand(command, event, readState(event.sessionId, options.dataDir), options)
+      if (command) return handleRuntimeCommand(command, event, readState(event.sessionId, options.dataDir), options);
+      return event.agent
+        ? handleChildPrompt(event, readState(event.sessionId, options.dataDir))
         : updateSession(event.sessionId, options.dataDir, state => handlePrompt(event, state));
     }
     case 'action.before':

@@ -24,11 +24,18 @@ function parsedResponse(value) {
   return value && typeof value === 'object' && !Array.isArray(value) ? value : null;
 }
 
+function agentIdentity(input) {
+  const agentId = optionalIdentifier(input.agent_id, input.agentId);
+  if (!agentId) return null;
+  return { agentId, agentType: typeof input.agent_type === 'string' ? input.agent_type : null };
+}
+
 function toControlEvent(input) {
   if (!input || typeof input !== 'object') return null;
   const kind = EVENT_KIND[input.hook_event_name];
   if (!kind) return null;
   const toolName = canonicalCodexToolName(input.tool_name);
+  const agent = agentIdentity(input);
 
   const event = {
     protocolVersion: PROTOCOL_VERSION,
@@ -43,7 +50,10 @@ function toControlEvent(input) {
     }
   };
 
-  if (kind === 'prompt.submit') event.prompt = String(input.prompt || '');
+  if (kind === 'prompt.submit') {
+    event.prompt = String(input.prompt || '');
+    if (agent) event.agent = agent;
+  }
   if (kind === 'action.after') {
     // Only delegation results can change this adapter's ledger. Ordinary tool
     // output must not acquire a writer lock just to rewrite unchanged state.

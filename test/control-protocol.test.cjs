@@ -305,6 +305,60 @@ test('Codex prompt hooks reject split directives and accept formal agents syntax
   }), { decision: 'block', reason: 'invalid prompt' });
 });
 
+test('Codex subagent prompts inherit the parent contract without replacing it', (t) => {
+  const directory = dataDir(t);
+  const parent = {
+    session_id: 'shared-parent',
+    hook_event_name: 'UserPromptSubmit'
+  };
+  handleCodexHook({
+    ...parent,
+    prompt: '$stop-that-shit change agents=6 -- parent task'
+  }, { dataDir: directory });
+  const before = readState('shared-parent', directory);
+  assert.equal(before.contract.mode, 'change');
+  assert.equal(before.contract.agentBudget, 6);
+
+  const output = handleCodexHook({
+    ...parent,
+    agent_id: 'child-agent',
+    agent_type: 'general-purpose',
+    prompt: '$stop-that-shit answer agents=0 -- child exploration'
+  }, { dataDir: directory });
+
+  assert.match(output.hookSpecificOutput.additionalContext, /mode=change/);
+  assert.match(output.hookSpecificOutput.additionalContext, /agents=0\/6/);
+  assert.doesNotMatch(output.hookSpecificOutput.additionalContext, /mode=answer/);
+  const after = readState('shared-parent', directory);
+  assert.equal(after.contract.mode, 'change');
+  assert.equal(after.contract.agentBudget, 6);
+  assert.equal(after.directiveError, null);
+});
+
+test('Codex subagent prompt violations cannot replace parent authority', (t) => {
+  const directory = dataDir(t);
+  const parent = {
+    session_id: 'invalid-child-parent',
+    hook_event_name: 'UserPromptSubmit'
+  };
+  handleCodexHook({
+    ...parent,
+    prompt: '$stop-that-shit change agents=2 -- parent task'
+  }, { dataDir: directory });
+
+  const output = handleCodexHook({
+    ...parent,
+    agent_id: 'child-agent',
+    prompt: '$stop-that-shit change total-agents=4 -- child task'
+  }, { dataDir: directory });
+
+  assert.match(output.hookSpecificOutput.additionalContext, /mode=change/);
+  assert.match(output.hookSpecificOutput.additionalContext, /agents=0\/2/);
+  const state = readState('invalid-child-parent', directory);
+  assert.equal(state.contract.agentBudget, 2);
+  assert.equal(state.directiveError, null);
+});
+
 test('Codex Adapter marks only high-confidence hashing actions', () => {
   const hashPatch = toControlEvent({
     session_id: 'session-1', hook_event_name: 'PreToolUse', tool_name: 'apply_patch',
